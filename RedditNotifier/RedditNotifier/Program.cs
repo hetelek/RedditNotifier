@@ -13,6 +13,17 @@ namespace RedditNotifier
 {
     class Program
     {
+        [Flags]
+        enum RedditAction
+        {
+            Message = 1,
+            Save = 2,
+            Upvote = 3,
+            Downvote = 4,
+            Approve = 5
+        };
+
+        static RedditAction redditActions = 0;
         static Reddit reddit = new Reddit();
         static int checkInterval = 0;
         static string[] subredditNames;
@@ -40,8 +51,33 @@ namespace RedditNotifier
                 }
                 recipientUsername = reddit.GetMe().FullName;
 
+                Console.WriteLine("Available actions:");
+                Console.WriteLine("[1] Send a message to myself");
+                Console.WriteLine("[2] Save it to my saved posts");
+                Console.WriteLine("[3] Upvote it");
+                Console.WriteLine("[4] Downvote it");
+                Console.WriteLine("[5] Approve it");
+                Console.WriteLine();
+                Console.Write("What actions should be taken when a match is found (seperate multiple with commas)?: ");
+
+                bool validInterval;
+                string[] actionStrings = Console.ReadLine().Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < actionStrings.Length; i++)
+                {
+                    RedditAction currentAction;
+                    validInterval = Enum.TryParse<RedditAction>(actionStrings[i], out currentAction);
+                    if (validInterval)
+                        redditActions |= currentAction;
+
+                    if (!validInterval || (redditActions.HasFlag(RedditAction.Downvote) && redditActions.HasFlag(RedditAction.Upvote)))
+                    {
+                        Console.WriteLine("Setting actions as default...");
+                        redditActions = RedditAction.Save;
+                    }
+                }
+
                 Console.Write("Check interval (seconds): ");
-                bool validInterval = Int32.TryParse(Console.ReadLine(), out checkInterval);
+                validInterval = Int32.TryParse(Console.ReadLine(), out checkInterval);
                 if (!validInterval)
                 {
                     Console.WriteLine("Setting check interval as default...");
@@ -114,8 +150,17 @@ namespace RedditNotifier
                         checkedCount++;
                         if (regex.IsMatch(post.Title))
                         {
-                            post.Save();
-                            messageBody.AppendLine("1. [" + post.Title + "](" + post.Shortlink + ")");
+                            if (redditActions.HasFlag(RedditAction.Save))
+                                post.Save();
+                            if (redditActions.HasFlag(RedditAction.Message))
+                                messageBody.AppendLine("1. [" + post.Title + "](" + post.Shortlink + ")");
+                            if (redditActions.HasFlag(RedditAction.Approve))
+                                post.Approve();
+                            if (redditActions.HasFlag(RedditAction.Upvote))
+                                post.Upvote();
+                            if (redditActions.HasFlag(RedditAction.Downvote))
+                                post.Downvote();
+
                             Console.WriteLine("Found: " + post.Title);
                         }
                     }
@@ -124,7 +169,7 @@ namespace RedditNotifier
                         lastCreatedTicks[i] = newLastCreatedTicks;
                 }
 
-                if (messageBody.Length > 0)
+                if (redditActions.HasFlag(RedditAction.Message) && messageBody.Length > 0)
                     reddit.ComposePrivateMessage("reddit Match Found", messageBody.ToString(), recipientUsername);
 
                 Console.WriteLine("Finished. Waiting " + checkInterval + " seconds...");
